@@ -5,6 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Multi-Angle Video Player</title>
     <style>
+        /* Drop Zone */
+        #drop-zone {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            z-index: 2000;
+            border: 4px dashed #ffffff;
+            cursor: pointer;
+        }
+        #drop-zone.hidden {
+            display: none;
+        }
+
+        /* Video Player */
         body {
             font-family: Arial, sans-serif;
             margin: 0;
@@ -125,16 +147,15 @@
     </style>
 </head>
 <body>
+    <div id="drop-zone">
+        Drop MP4 file here or click to browse
+        <input type="file" id="file-input" hidden accept="video/mp4">
+    </div>
+
     <div id="hamburger-menu" onclick="toggleSidebar()">&#9776;</div>
-
-    <div id="selected-view-container">
-        <video id="selected-view" crossorigin="anonymous">
-            <source src="Suzumi Nemo 2nd ONE MAN LIVE ONESELF MULTI-ANGLE.mp4" type="video/mp4">
-            Your browser does not support the video tag.
-        </video>
-
+    <div id="selected-view-container" class="hidden">
+        <video id="selected-view" crossorigin="anonymous"></video>
         <canvas id="preview-frame"></canvas>
-
         <div id="custom-controls">
             <button id="play-pause">⏯</button>
             <input type="range" id="seek-bar" min="0" max="100" value="0">
@@ -142,7 +163,6 @@
             <button id="fullscreen">⛶</button>
         </div>
     </div>
-
     <div id="sidebar">
         <canvas class="preview" data-crop="1920:1080:0:0"></canvas>
         <canvas class="preview" data-crop="1920:1080:1920:0"></canvas>
@@ -152,11 +172,49 @@
     </div>
 
     <script>
+        // Drag & Drop Implementation
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const videoContainer = document.getElementById('selected-view-container');
+        let currentVideoUrl = null;
+
+        function handleFile(file) {
+            if (!file.type.startsWith('video/')) {
+                alert('Please select a video file');
+                return;
+            }
+
+            if (currentVideoUrl) URL.revokeObjectURL(currentVideoUrl);
+            
+            currentVideoUrl = URL.createObjectURL(file);
+            selectedView.src = currentVideoUrl;
+            
+            dropZone.classList.add('hidden');
+            videoContainer.classList.remove('hidden');
+        }
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            handleFile(e.dataTransfer.files[0]);
+        });
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+
+        // Video Player Core Logic
         const selectedView = document.getElementById('selected-view');
         const previewFrame = document.getElementById('preview-frame');
         const previews = document.querySelectorAll('.preview');
         const sidebar = document.getElementById('sidebar');
-        const customControls = document.getElementById('custom-controls');
         const playPauseButton = document.getElementById('play-pause');
         const seekBar = document.getElementById('seek-bar');
         const timeDisplay = document.getElementById('time-display');
@@ -166,10 +224,9 @@
         let previewsAnimationFrameId = null;
         const canvasContexts = [];
 
-        // Initialize canvas contexts
+        // Canvas Initialization
         previews.forEach((preview, index) => {
-            const ctx = preview.getContext('2d');
-            canvasContexts[index] = ctx;
+            canvasContexts[index] = preview.getContext('2d');
         });
 
         function toggleSidebar() {
@@ -189,7 +246,7 @@
         }
 
         function cropVideo(cropValue) {
-            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            cancelAnimationFrame(animationFrameId);
             
             const [width, height, x, y] = cropValue.split(':');
             const ctx = previewFrame.getContext('2d');
@@ -217,10 +274,8 @@
         }
 
         function resetCrop() {
-            if (animationFrameId) {
-                cancelAnimationFrame(animationFrameId);
-                animationFrameId = null;
-            }
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
 
             const ctx = previewFrame.getContext('2d');
             ctx.clearRect(0, 0, previewFrame.width, previewFrame.height);
@@ -245,6 +300,7 @@
             }
         }
 
+        // Event Listeners
         playPauseButton.addEventListener('click', () => {
             if (selectedView.paused || selectedView.ended) {
                 selectedView.play();
@@ -274,6 +330,17 @@
             }
         });
 
+        selectedView.addEventListener('loadedmetadata', () => {
+            previews.forEach(preview => {
+                preview.width = preview.offsetWidth;
+                preview.height = preview.offsetHeight;
+            });
+            previewFrame.width = selectedView.videoWidth;
+            previewFrame.height = selectedView.videoHeight;
+            drawPreviews();
+        });
+
+        // Controls Auto-Hide
         let controlsTimeout;
         function showControls() {
             customControls.classList.remove('hidden');
@@ -286,21 +353,17 @@
         document.addEventListener('mousemove', showControls);
         document.addEventListener('click', showControls);
 
-        // Initialize previews
-        selectedView.addEventListener('loadedmetadata', () => {
-            previews.forEach(preview => {
-                preview.width = preview.offsetWidth;
-                preview.height = preview.offsetHeight;
-            });
-            drawPreviews();
-        });
-
-        // Add click event to apply crop
+        // Preview Click Handlers
         previews.forEach(preview => {
             preview.addEventListener('click', (event) => {
                 const cropValue = preview.getAttribute('data-crop');
                 cropVideo(cropValue);
             });
+        });
+
+        // Cleanup
+        window.addEventListener('beforeunload', () => {
+            if (currentVideoUrl) URL.revokeObjectURL(currentVideoUrl);
         });
     </script>
 </body>
